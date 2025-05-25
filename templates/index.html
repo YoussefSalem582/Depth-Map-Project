@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 Depth Map Project - Web Interface</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .main-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            margin: 20px auto;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: #333;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .feature-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .btn-custom {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-custom:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            color: white;
+        }
+        
+        .result-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            margin: 10px 0;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .metrics-table {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .colormap-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .colormap-item {
+            text-align: center;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: rgba(102, 126, 234, 0.05);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: rgba(118, 75, 162, 0.05);
+        }
+        
+        .upload-area.dragover {
+            border-color: #28a745;
+            background: rgba(40, 167, 69, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-container">
+            <!-- Header -->
+            <div class="header">
+                <h1><i class="fas fa-eye"></i> Depth Map Project</h1>
+                <p class="lead">Advanced Depth Estimation & Visualization Platform</p>
+                <p class="text-muted">Upload images, process depth maps, and explore computer vision algorithms</p>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <ul class="nav nav-pills nav-justified mb-4" id="mainTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="demo-tab" data-bs-toggle="pill" data-bs-target="#demo" type="button" role="tab">
+                        <i class="fas fa-play-circle"></i> Demo
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="upload-tab" data-bs-toggle="pill" data-bs-target="#upload" type="button" role="tab">
+                        <i class="fas fa-upload"></i> Upload & Process
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="metrics-tab" data-bs-toggle="pill" data-bs-target="#metrics" type="button" role="tab">
+                        <i class="fas fa-chart-line"></i> Metrics
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="colormaps-tab" data-bs-toggle="pill" data-bs-target="#colormaps" type="button" role="tab">
+                        <i class="fas fa-palette"></i> Colormaps
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content" id="mainTabContent">
+                
+                <!-- Demo Tab -->
+                <div class="tab-pane fade show active" id="demo" role="tabpanel">
+                    <div class="feature-card">
+                        <h3><i class="fas fa-magic"></i> Interactive Demo</h3>
+                        <p>Generate synthetic depth data and see the post-processing pipeline in action.</p>
+                        
+                        <button class="btn btn-custom" onclick="runDemo()">
+                            <i class="fas fa-play"></i> Run Demo
+                        </button>
+                        
+                        <div class="loading" id="demo-loading">
+                            <div class="spinner"></div>
+                            <p>Processing depth map...</p>
+                        </div>
+                        
+                        <div id="demo-results" class="mt-4"></div>
+                    </div>
+                </div>
+
+                <!-- Upload Tab -->
+                <div class="tab-pane fade" id="upload" role="tabpanel">
+                    <div class="feature-card">
+                        <h3><i class="fas fa-cloud-upload-alt"></i> Upload & Process Images</h3>
+                        <p>Upload your own images to generate depth maps and visualizations.</p>
+                        
+                        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                            <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-primary"></i>
+                            <h5>Drop files here or click to upload</h5>
+                            <p class="text-muted">Supports: PNG, JPG, JPEG, BMP, TIFF (Max: 16MB)</p>
+                        </div>
+                        
+                        <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="uploadFile()">
+                        
+                        <div class="loading" id="upload-loading">
+                            <div class="spinner"></div>
+                            <p>Processing your image...</p>
+                        </div>
+                        
+                        <div id="upload-results" class="mt-4"></div>
+                    </div>
+                </div>
+
+                <!-- Metrics Tab -->
+                <div class="tab-pane fade" id="metrics" role="tabpanel">
+                    <div class="feature-card">
+                        <h3><i class="fas fa-calculator"></i> Depth Evaluation Metrics</h3>
+                        <p>Comprehensive evaluation metrics for depth estimation quality assessment.</p>
+                        
+                        <button class="btn btn-custom" onclick="evaluateMetrics()">
+                            <i class="fas fa-chart-bar"></i> Calculate Metrics
+                        </button>
+                        
+                        <div class="loading" id="metrics-loading">
+                            <div class="spinner"></div>
+                            <p>Computing evaluation metrics...</p>
+                        </div>
+                        
+                        <div id="metrics-results" class="mt-4"></div>
+                    </div>
+                </div>
+
+                <!-- Colormaps Tab -->
+                <div class="tab-pane fade" id="colormaps" role="tabpanel">
+                    <div class="feature-card">
+                        <h3><i class="fas fa-palette"></i> Colormap Visualization</h3>
+                        <p>Explore different colormaps for depth visualization and choose the best one for your needs.</p>
+                        
+                        <button class="btn btn-custom" onclick="showColormaps()">
+                            <i class="fas fa-eye"></i> Show Colormaps
+                        </button>
+                        
+                        <div class="loading" id="colormaps-loading">
+                            <div class="spinner"></div>
+                            <p>Generating colormap examples...</p>
+                        </div>
+                        
+                        <div id="colormaps-results" class="mt-4"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center mt-5 pt-4 border-top">
+                <p class="text-muted">
+                    <i class="fas fa-code"></i> Depth Map Project - Computer Vision & Machine Learning
+                    <br>
+                    <small>Built with Flask, OpenCV, and modern web technologies</small>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Demo functionality
+        function runDemo() {
+            const loading = document.getElementById('demo-loading');
+            const results = document.getElementById('demo-results');
+            
+            loading.style.display = 'block';
+            results.innerHTML = '';
+            
+            fetch('/api/demo', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    results.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-4">
+                                <h5>Original Depth</h5>
+                                <img src="${data.original}" class="result-image" alt="Original Depth">
+                            </div>
+                            <div class="col-md-4">
+                                <h5>Hole Filled</h5>
+                                <img src="${data.filled}" class="result-image" alt="Hole Filled">
+                            </div>
+                            <div class="col-md-4">
+                                <h5>Smoothed</h5>
+                                <img src="${data.smoothed}" class="result-image" alt="Smoothed">
+                            </div>
+                        </div>
+                        <div class="alert alert-success mt-3">
+                            <i class="fas fa-check-circle"></i> Demo completed successfully!
+                        </div>
+                    `;
+                } else {
+                    results.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Error: ${data.error}
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                results.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Network error: ${error.message}
+                    </div>
+                `;
+            });
+        }
+
+        // File upload functionality
+        function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) return;
+            
+            const loading = document.getElementById('upload-loading');
+            const results = document.getElementById('upload-results');
+            
+            loading.style.display = 'block';
+            results.innerHTML = '';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    results.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>Original Image</h5>
+                                <img src="${data.original_image}" class="result-image" alt="Original Image">
+                            </div>
+                            <div class="col-md-6">
+                                <h5>Depth Map</h5>
+                                <img src="${data.depth_map}" class="result-image" alt="Depth Map">
+                            </div>
+                        </div>
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-info-circle"></i> ${data.message}
+                        </div>
+                    `;
+                } else {
+                    results.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Error: ${data.error}
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                results.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Upload error: ${error.message}
+                    </div>
+                `;
+            });
+        }
+
+        // Metrics evaluation
+        function evaluateMetrics() {
+            const loading = document.getElementById('metrics-loading');
+            const results = document.getElementById('metrics-results');
+            
+            loading.style.display = 'block';
+            results.innerHTML = '';
+            
+            fetch('/api/evaluate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    let tableRows = '';
+                    for (const [key, value] of Object.entries(data.metrics)) {
+                        tableRows += `
+                            <tr>
+                                <td><strong>${key}</strong></td>
+                                <td>${value}</td>
+                            </tr>
+                        `;
+                    }
+                    
+                    results.innerHTML = `
+                        <div class="metrics-table">
+                            <table class="table table-striped">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Metric</th>
+                                        <th>Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tableRows}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="alert alert-success mt-3">
+                            <i class="fas fa-check-circle"></i> Metrics calculated successfully!
+                        </div>
+                    `;
+                } else {
+                    results.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Error: ${data.error}
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                results.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Network error: ${error.message}
+                    </div>
+                `;
+            });
+        }
+
+        // Colormaps display
+        function showColormaps() {
+            const loading = document.getElementById('colormaps-loading');
+            const results = document.getElementById('colormaps-results');
+            
+            loading.style.display = 'block';
+            results.innerHTML = '';
+            
+            fetch('/api/colormaps')
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    let colormapItems = '';
+                    for (const [name, image] of Object.entries(data.colormaps)) {
+                        colormapItems += `
+                            <div class="colormap-item">
+                                <h6>${name}</h6>
+                                <img src="${image}" class="result-image" alt="${name} colormap">
+                            </div>
+                        `;
+                    }
+                    
+                    results.innerHTML = `
+                        <div class="colormap-grid">
+                            ${colormapItems}
+                        </div>
+                        <div class="alert alert-success mt-3">
+                            <i class="fas fa-check-circle"></i> Colormaps generated successfully!
+                        </div>
+                    `;
+                } else {
+                    results.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Error: ${data.error}
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                results.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Network error: ${error.message}
+                    </div>
+                `;
+            });
+        }
+
+        // Drag and drop functionality
+        const uploadArea = document.getElementById('uploadArea');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight(e) {
+            uploadArea.classList.add('dragover');
+        }
+        
+        function unhighlight(e) {
+            uploadArea.classList.remove('dragover');
+        }
+        
+        uploadArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            if (files.length > 0) {
+                document.getElementById('fileInput').files = files;
+                uploadFile();
+            }
+        }
+    </script>
+</body>
+</html> 

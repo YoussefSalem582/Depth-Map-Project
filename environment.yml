@@ -1,0 +1,58 @@
+name: depth-map-project
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - pip
+  
+  # Core scientific computing
+  - numpy>=1.24.0
+  - scipy>=1.11.0
+  - matplotlib>=3.7.0
+  - pandas>=2.0.0
+  - seaborn>=0.12.0
+  
+  # Computer vision
+  - opencv>=4.8.0
+  - scikit-image>=0.21.0
+  - pillow>=10.0.0
+  
+  # Deep learning (PyTorch ecosystem)
+  - pytorch>=2.0.0
+  - torchvision>=0.15.0
+  - pytorch-cuda=11.8  # Adjust based on your CUDA version
+  
+  # Development tools
+  - jupyter
+  - ipykernel
+  - black
+  - pytest
+  - pytest-cov
+  - mypy
+  - pre-commit
+  
+  # Utilities
+  - tqdm
+  - pyyaml
+  - requests
+  - pathlib2
+  
+  # Optional visualization
+  - plotly
+  
+  # Pip-only dependencies
+  - pip:
+    - timm>=0.9.0
+    - omegaconf>=2.3.0
+    - open3d>=0.17.0
+    - streamlit>=1.25.0
+    - gradio>=3.40.0
+    - wandb>=0.15.0
+    - ruff>=0.0.280
+    - onnx>=1.14.0
+    - onnxruntime>=1.15.0
+    - -e .  # Install the package in development mode 
