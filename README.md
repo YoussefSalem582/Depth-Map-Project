@@ -1,6 +1,13 @@
 # 🎯 Depth Map Project
 
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
+[![Flask](https://img.shields.io/badge/Flask-2.0%2B-green.svg)](https://flask.palletsprojects.com/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-4.0%2B-red.svg)](https://opencv.org)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A modern web-based depth estimation and visualization platform built with Flask and OpenCV.
+
+🌐 **Repository**: [https://github.com/YoussefSalem582/Depth-Map-Project](https://github.com/YoussefSalem582/Depth-Map-Project)
 
 ## 🚀 Quick Start
 
@@ -12,8 +19,8 @@ A modern web-based depth estimation and visualization platform built with Flask 
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd DepthMap
+   git clone https://github.com/YoussefSalem582/Depth-Map-Project.git
+   cd Depth-Map-Project
    ```
 
 2. **Install dependencies**
