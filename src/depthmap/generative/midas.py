@@ -1,6 +1,9 @@
 """MiDaS monocular depth estimation implementation."""
 
 import logging
+import os
+import pickle
+from pathlib import Path
 from typing import Optional, Union
 
 import cv2
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class MiDaSDepthEstimator(BaseDepthEstimator):
-    """MiDaS monocular depth estimation using pretrained models."""
+    """MiDaS monocular depth estimation using pretrained models with caching support."""
     
     # Available MiDaS models
     AVAILABLE_MODELS = {
@@ -38,29 +41,211 @@ class MiDaSDepthEstimator(BaseDepthEstimator):
         model_name: str = "DPT_Large",
         device: Optional[Union[str, torch.device]] = None,
         enable_amp: bool = True,
-        optimize: bool = True
+        optimize: bool = True,
+        cache_dir: Optional[str] = None,
+        use_cache: bool = True
     ):
-        """Initialize MiDaS depth estimator.
+        """Initialize MiDaS depth estimator with caching support.
         
         Args:
             model_name: Name of the MiDaS model to use.
             device: Device to run inference on.
             enable_amp: Whether to enable automatic mixed precision.
             optimize: Whether to optimize model for inference.
+            cache_dir: Directory to cache models. If None, uses default cache.
+            use_cache: Whether to use cached models.
         """
         super().__init__(device, enable_amp)
         
         self.model_name = model_name
         self.optimize = optimize
+        self.use_cache = use_cache
         self.input_size = self.MODEL_SIZES.get(model_name, (384, 384))
+        
+        # Setup cache directory
+        if cache_dir is None:
+            cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "depthmap", "models")
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         # Load model
         self.load_model(model_name)
         
-        logger.info(f"Initialized MiDaS {model_name} depth estimator")
+        logger.info(f"Initialized MiDaS {model_name} depth estimator with caching")
     
+    def _get_cache_path(self, model_name: str, format: str = "pt") -> Path:
+        """Get cache path for a model.
+        
+        Args:
+            model_name: Name of the model.
+            format: Format to save ('pt', 'h5', 'pkl').
+            
+        Returns:
+            Path to cached model file.
+        """
+        return self.cache_dir / f"midas_{model_name.lower()}.{format}"
+    
+    def _save_model_cache(self, model_name: str) -> None:
+        """Save model to cache in multiple formats.
+        
+        Args:
+            model_name: Name of the model to save.
+        """
+        try:
+            # Save as PyTorch state dict (.pt)
+            pt_path = self._get_cache_path(model_name, "pt")
+            torch.save({
+                'model_state_dict': self.model.state_dict(),
+                'model_name': model_name,
+                'input_size': self.input_size,
+                'device': str(self.device)
+            }, pt_path)
+            logger.info(f"Saved model cache to {pt_path}")
+            
+            # Save as pickle (.pkl) for metadata
+            pkl_path = self._get_cache_path(model_name, "pkl")
+            model_info = {
+                'model_name': model_name,
+                'input_size': self.input_size,
+                'device': str(self.device),
+                'model_type': type(self.model).__name__,
+                'cache_version': '1.0'
+            }
+            with open(pkl_path, 'wb') as f:
+                pickle.dump(model_info, f)
+            
+            # Try to save as HDF5 (.h5) if h5py is available
+            try:
+                import h5py
+                h5_path = self._get_cache_path(model_name, "h5")
+                
+                # Convert model to ONNX first, then save
+                self._save_as_h5(h5_path)
+                logger.info(f"Saved model in H5 format to {h5_path}")
+                
+            except ImportError:
+                logger.warning("h5py not available, skipping H5 format save")
+            except Exception as e:
+                logger.warning(f"Could not save H5 format: {e}")
+                
+        except Exception as e:
+            logger.error(f"Failed to save model cache: {e}")
+    
+    def _save_as_h5(self, h5_path: Path) -> None:
+        """Save model weights in HDF5 format.
+        
+        Args:
+            h5_path: Path to save H5 file.
+        """
+        import h5py
+        
+        with h5py.File(h5_path, 'w') as f:
+            # Save model metadata
+            f.attrs['model_name'] = self.model_name
+            f.attrs['input_size'] = self.input_size
+            f.attrs['device'] = str(self.device)
+            
+            # Save model state dict
+            state_dict = self.model.state_dict()
+            for key, tensor in state_dict.items():
+                # Convert tensor to numpy and save
+                f.create_dataset(key, data=tensor.cpu().numpy())
+    
+    def _load_model_cache(self, model_name: str) -> bool:
+        """Load model from cache.
+        
+        Args:
+            model_name: Name of the model to load.
+            
+        Returns:
+            True if successfully loaded from cache, False otherwise.
+        """
+        pt_path = self._get_cache_path(model_name, "pt")
+        
+        if not pt_path.exists():
+            return False
+        
+        try:
+            # Load cached model
+            checkpoint = torch.load(pt_path, map_location=self.device)
+            
+            # First load the model architecture from torch hub
+            self.model = torch.hub.load(
+                self.AVAILABLE_MODELS[model_name],
+                model_name,
+                pretrained=False,  # Don't download weights
+                trust_repo=True
+            )
+            
+            # Load cached weights
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.model = self.model.to(self.device)
+            self.model.eval()
+            
+            # Optimize for inference
+            if self.optimize:
+                self._optimize_model()
+            
+            # Setup transforms
+            self._setup_transforms()
+            
+            logger.info(f"Successfully loaded {model_name} from cache")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to load model from cache: {e}")
+            return False
+    
+    def _load_from_h5(self, h5_path: Path) -> bool:
+        """Load model from HDF5 format.
+        
+        Args:
+            h5_path: Path to H5 file.
+            
+        Returns:
+            True if successfully loaded, False otherwise.
+        """
+        try:
+            import h5py
+            
+            if not h5_path.exists():
+                return False
+            
+            with h5py.File(h5_path, 'r') as f:
+                # Load metadata
+                cached_model_name = f.attrs['model_name']
+                if cached_model_name != self.model_name:
+                    return False
+                
+                # Load model architecture
+                self.model = torch.hub.load(
+                    self.AVAILABLE_MODELS[self.model_name],
+                    self.model_name,
+                    pretrained=False,
+                    trust_repo=True
+                )
+                
+                # Load weights from H5
+                state_dict = {}
+                for key in f.keys():
+                    state_dict[key] = torch.from_numpy(f[key][:])
+                
+                self.model.load_state_dict(state_dict)
+                self.model = self.model.to(self.device)
+                self.model.eval()
+                
+                logger.info(f"Successfully loaded {self.model_name} from H5 cache")
+                return True
+                
+        except ImportError:
+            logger.warning("h5py not available for H5 loading")
+            return False
+        except Exception as e:
+            logger.warning(f"Failed to load from H5: {e}")
+            return False
+
     def load_model(self, model_name: str, **kwargs) -> None:
-        """Load MiDaS model from torch hub.
+        """Load MiDaS model from cache or torch hub.
         
         Args:
             model_name: Name of the MiDaS model.
@@ -71,8 +256,17 @@ class MiDaSDepthEstimator(BaseDepthEstimator):
         
         logger.info(f"Loading MiDaS model: {model_name}")
         
+        # Try to load from cache first
+        if self.use_cache and self._load_model_cache(model_name):
+            return
+        
+        # Try to load from H5 cache
+        if self.use_cache and self._load_from_h5(self._get_cache_path(model_name, "h5")):
+            return
+        
         try:
-            # Load model from torch hub
+            # Load model from torch hub (download if necessary)
+            logger.info("Loading from torch hub (this may take a while for first time)...")
             self.model = torch.hub.load(
                 self.AVAILABLE_MODELS[model_name],
                 model_name,
@@ -91,12 +285,53 @@ class MiDaSDepthEstimator(BaseDepthEstimator):
             # Setup transforms
             self._setup_transforms()
             
-            logger.info(f"Successfully loaded {model_name}")
+            # Save to cache for next time
+            if self.use_cache:
+                self._save_model_cache(model_name)
+            
+            logger.info(f"Successfully loaded {model_name} and saved to cache")
             
         except Exception as e:
             logger.error(f"Failed to load model {model_name}: {e}")
             raise
     
+    def clear_cache(self) -> None:
+        """Clear all cached models."""
+        try:
+            import shutil
+            if self.cache_dir.exists():
+                shutil.rmtree(self.cache_dir)
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                logger.info("Cleared model cache")
+        except Exception as e:
+            logger.error(f"Failed to clear cache: {e}")
+    
+    def get_cache_info(self) -> dict:
+        """Get information about cached models.
+        
+        Returns:
+            Dictionary with cache information.
+        """
+        cache_info = {
+            'cache_dir': str(self.cache_dir),
+            'cached_models': [],
+            'total_size_mb': 0
+        }
+        
+        if self.cache_dir.exists():
+            for file_path in self.cache_dir.glob("*"):
+                if file_path.is_file():
+                    size_mb = file_path.stat().st_size / (1024 * 1024)
+                    cache_info['cached_models'].append({
+                        'name': file_path.name,
+                        'size_mb': round(size_mb, 2),
+                        'format': file_path.suffix[1:]  # Remove the dot
+                    })
+                    cache_info['total_size_mb'] += size_mb
+        
+        cache_info['total_size_mb'] = round(cache_info['total_size_mb'], 2)
+        return cache_info
+
     def _optimize_model(self) -> None:
         """Optimize model for inference."""
         try:

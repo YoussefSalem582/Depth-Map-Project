@@ -8,8 +8,13 @@ pillow>=10.0.0
 # Web interface
 flask>=2.3.0
 
-# Optional for advanced features
+# Advanced depth estimation
 torch>=2.0.0
 torchvision>=0.15.0
 scikit-image>=0.21.0
-pandas>=2.0.0 
+pandas>=2.0.0
+
+# Enhanced processing
+timm>=0.9.0
+transformers>=4.30.0
+h5py>=3.8.0 

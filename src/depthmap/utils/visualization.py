@@ -14,9 +14,12 @@ def colorize_depth(
     min_depth: Optional[float] = None,
     max_depth: Optional[float] = None,
     colormap: str = "turbo",
-    invalid_value: float = 0.0
+    invalid_value: float = 0.0,
+    enhance_contrast: bool = True,
+    apply_gamma: bool = True,
+    gamma: float = 0.8
 ) -> np.ndarray:
-    """Colorize a depth map for visualization.
+    """Enhanced colorize a depth map for visualization with better contrast and clarity.
     
     Args:
         depth: Depth map as numpy array.
@@ -24,21 +27,24 @@ def colorize_depth(
         max_depth: Maximum depth value for normalization. If None, uses depth.max().
         colormap: Matplotlib colormap name.
         invalid_value: Value representing invalid/missing depth.
+        enhance_contrast: Whether to enhance contrast using histogram equalization.
+        apply_gamma: Whether to apply gamma correction for better visualization.
+        gamma: Gamma value for correction (< 1.0 brightens, > 1.0 darkens).
         
     Returns:
         Colorized depth map as RGB numpy array (uint8).
     """
     # Handle invalid values
-    valid_mask = depth != invalid_value
+    valid_mask = (depth != invalid_value) & np.isfinite(depth) & (depth > 0)
     if not np.any(valid_mask):
         # All values are invalid, return black image
         return np.zeros((*depth.shape, 3), dtype=np.uint8)
     
-    # Normalize depth values
+    # Robust depth range estimation using percentiles to avoid outliers
     if min_depth is None:
-        min_depth = depth[valid_mask].min()
+        min_depth = np.percentile(depth[valid_mask], 2)  # 2nd percentile
     if max_depth is None:
-        max_depth = depth[valid_mask].max()
+        max_depth = np.percentile(depth[valid_mask], 98)  # 98th percentile
     
     # Avoid division by zero
     if max_depth == min_depth:
@@ -46,11 +52,34 @@ def colorize_depth(
     else:
         normalized_depth = np.clip((depth - min_depth) / (max_depth - min_depth), 0, 1)
     
+    # Apply gamma correction for better visualization
+    if apply_gamma:
+        normalized_depth[valid_mask] = np.power(normalized_depth[valid_mask], gamma)
+    
+    # Enhance contrast using adaptive histogram equalization
+    if enhance_contrast:
+        # Convert to uint8 for CLAHE
+        depth_uint8 = (normalized_depth * 255).astype(np.uint8)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(depth_uint8)
+        normalized_depth = enhanced.astype(np.float32) / 255.0
+    
     # Set invalid values to 0 (will be black in most colormaps)
     normalized_depth[~valid_mask] = 0
     
-    # Apply colormap
-    cmap = plt.get_cmap(colormap)
+    # Apply colormap with enhanced settings
+    if colormap == "turbo":
+        # Use enhanced turbo colormap for better depth perception
+        cmap = plt.get_cmap("turbo")
+    elif colormap == "viridis_enhanced":
+        # Custom enhanced viridis
+        cmap = plt.get_cmap("viridis")
+    elif colormap == "plasma_enhanced":
+        # Custom enhanced plasma
+        cmap = plt.get_cmap("plasma")
+    else:
+        cmap = plt.get_cmap(colormap)
+    
     colored_depth = cmap(normalized_depth)
     
     # Convert to uint8 RGB
@@ -58,6 +87,15 @@ def colorize_depth(
     
     # Set invalid pixels to black
     colored_depth_rgb[~valid_mask] = [0, 0, 0]
+    
+    # Apply slight sharpening for better edge definition
+    kernel = np.array([[-0.1, -0.1, -0.1],
+                       [-0.1,  1.8, -0.1],
+                       [-0.1, -0.1, -0.1]])
+    
+    for channel in range(3):
+        sharpened = cv2.filter2D(colored_depth_rgb[:, :, channel].astype(np.float32), -1, kernel)
+        colored_depth_rgb[:, :, channel] = np.clip(sharpened, 0, 255).astype(np.uint8)
     
     return colored_depth_rgb
 
