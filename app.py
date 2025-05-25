@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
 Flask Web Application for Depth Map Project
-A simple web interface for depth estimation and visualization.
+A simple web interface for depth estimation and visualization with live camera support.
 """
 
 import os
 import sys
 import io
 import base64
+import threading
+import time
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 import numpy as np
 import cv2
 import matplotlib
@@ -34,6 +36,78 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Global processor instance
 processor = DepthPostProcessor()
+
+# Camera configuration
+class CameraManager:
+    def __init__(self):
+        self.camera = None
+        self.is_streaming = False
+        self.frame = None
+        self.depth_frame = None
+        self.lock = threading.Lock()
+        
+    def start_camera(self, camera_id=0):
+        """Start camera capture."""
+        try:
+            # Stop any existing camera first
+            if self.camera:
+                self.camera.release()
+                
+            self.camera = cv2.VideoCapture(camera_id)
+            if not self.camera.isOpened():
+                print(f"Failed to open camera {camera_id}")
+                return False
+            
+            # Test if we can read a frame
+            ret, test_frame = self.camera.read()
+            if not ret:
+                print(f"Failed to read from camera {camera_id}")
+                self.camera.release()
+                self.camera = None
+                return False
+            
+            # Set camera properties for better performance
+            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            self.camera.set(cv2.CAP_PROP_FPS, 30)
+            
+            self.is_streaming = True
+            print(f"Camera {camera_id} started successfully")
+            return True
+        except Exception as e:
+            print(f"Error starting camera: {e}")
+            if self.camera:
+                self.camera.release()
+                self.camera = None
+            return False
+    
+    def stop_camera(self):
+        """Stop camera capture."""
+        self.is_streaming = False
+        if self.camera:
+            self.camera.release()
+            self.camera = None
+    
+    def get_frame(self):
+        """Get current frame from camera."""
+        if not self.camera or not self.is_streaming:
+            return None, None
+        
+        ret, frame = self.camera.read()
+        if not ret:
+            return None, None
+        
+        # Generate depth map for the frame
+        depth_map = create_image_based_depth(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        
+        with self.lock:
+            self.frame = frame.copy()
+            self.depth_frame = depth_map.copy()
+        
+        return frame, depth_map
+
+# Global camera manager
+camera_manager = CameraManager()
 
 def allowed_file(filename):
     """Check if file extension is allowed."""
@@ -144,10 +218,119 @@ def numpy_to_base64(array, format='PNG'):
     img_base64 = base64.b64encode(buffer.getvalue()).decode()
     return f"data:image/{format.lower()};base64,{img_base64}"
 
+def generate_camera_frames():
+    """Generate camera frames for streaming."""
+    print("Starting camera frame generation...")
+    frame_count = 0
+    
+    while camera_manager.is_streaming:
+        frame, depth_map = camera_manager.get_frame()
+        
+        if frame is not None and depth_map is not None:
+            frame_count += 1
+            if frame_count % 30 == 0:  # Log every 30 frames
+                print(f"Generated {frame_count} frames")
+            
+            # Convert frame to RGB
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Create depth visualization
+            depth_colored = colorize_depth(depth_map, colormap="turbo")
+            
+            # Create side-by-side view
+            combined = np.hstack([frame_rgb, depth_colored])
+            
+            # Encode as JPEG
+            _, buffer = cv2.imencode('.jpg', cv2.cvtColor(combined, cv2.COLOR_RGB2BGR))
+            frame_bytes = buffer.tobytes()
+            
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        else:
+            print("No frame available, waiting...")
+        
+        time.sleep(0.033)  # ~30 FPS
+    
+    print("Camera frame generation stopped.")
+
 @app.route('/')
 def index():
     """Main page."""
     return render_template('index.html')
+
+@app.route('/debug')
+def debug():
+    """Camera debug page."""
+    return render_template('camera_debug.html')
+
+@app.route('/api/camera/start', methods=['POST'])
+def start_camera():
+    """Start camera streaming."""
+    try:
+        # Handle both JSON and non-JSON requests
+        camera_id = 0
+        if request.is_json and request.json:
+            camera_id = request.json.get('camera_id', 0)
+        
+        if camera_manager.start_camera(camera_id):
+            return jsonify({'success': True, 'message': 'Camera started successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to start camera'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/camera/stop', methods=['POST'])
+def stop_camera():
+    """Stop camera streaming."""
+    try:
+        camera_manager.stop_camera()
+        return jsonify({'success': True, 'message': 'Camera stopped successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/camera/status', methods=['GET'])
+def camera_status():
+    """Get camera status."""
+    return jsonify({
+        'is_streaming': camera_manager.is_streaming,
+        'has_camera': camera_manager.camera is not None
+    })
+
+@app.route('/camera_feed')
+def camera_feed():
+    """Video streaming route."""
+    return Response(generate_camera_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/api/camera/snapshot', methods=['POST'])
+def camera_snapshot():
+    """Take a snapshot from the camera."""
+    try:
+        if not camera_manager.is_streaming:
+            return jsonify({'success': False, 'error': 'Camera is not running'})
+        
+        with camera_manager.lock:
+            if camera_manager.frame is not None and camera_manager.depth_frame is not None:
+                # Convert frame to RGB
+                frame_rgb = cv2.cvtColor(camera_manager.frame, cv2.COLOR_BGR2RGB)
+                
+                # Create depth visualization
+                depth_colored = colorize_depth(camera_manager.depth_frame, colormap="turbo")
+                
+                # Convert to base64
+                results = {
+                    'original_image': numpy_to_base64(frame_rgb),
+                    'depth_map': numpy_to_base64(depth_colored),
+                    'success': True,
+                    'message': 'Snapshot captured successfully'
+                }
+                
+                return jsonify(results)
+            else:
+                return jsonify({'success': False, 'error': 'No frame available'})
+                
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/demo', methods=['POST'])
 def demo():
@@ -281,10 +464,20 @@ def get_colormaps():
         return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
-    print("🎯 Depth Map Project - Flask Web Application")
-    print("=" * 50)
+    print("🎯 Depth Map Project - Flask Web Application with Live Camera")
+    print("=" * 60)
     print("Starting Flask server...")
     print("Access the application at: http://localhost:5000")
-    print("=" * 50)
+    print("Features:")
+    print("  📷 Live Camera Feed with Real-time Depth Maps")
+    print("  📱 Interactive Demo")
+    print("  📤 Upload & Process Images")
+    print("  📊 Evaluation Metrics")
+    print("  🎨 Colormap Gallery")
+    print("=" * 60)
     
-    app.run(debug=True, host='127.0.0.1', port=5000) 
+    try:
+        app.run(debug=True, host='127.0.0.1', port=5000, threaded=True)
+    finally:
+        # Cleanup camera on exit
+        camera_manager.stop_camera() 

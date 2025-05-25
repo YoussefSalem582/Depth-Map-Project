@@ -157,6 +157,11 @@
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="camera-tab" data-bs-toggle="pill" data-bs-target="#camera" type="button" role="tab">
+                        <i class="fas fa-video"></i> Live Camera
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
                     <button class="nav-link" id="upload-tab" data-bs-toggle="pill" data-bs-target="#upload" type="button" role="tab">
                         <i class="fas fa-upload"></i> Upload & Process
                     </button>
@@ -192,6 +197,58 @@
                         </div>
                         
                         <div id="demo-results" class="mt-4"></div>
+                    </div>
+                </div>
+
+                <!-- Live Camera Tab -->
+                <div class="tab-pane fade" id="camera" role="tabpanel">
+                    <div class="feature-card">
+                        <h3><i class="fas fa-video"></i> Live Camera Depth Mapping</h3>
+                        <p>Real-time depth map generation from your camera feed. See depth estimation in action!</p>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <button class="btn btn-custom me-2" onclick="startCamera()">
+                                    <i class="fas fa-play"></i> Start Camera
+                                </button>
+                                <button class="btn btn-outline-secondary me-2" onclick="stopCamera()">
+                                    <i class="fas fa-stop"></i> Stop Camera
+                                </button>
+                                <button class="btn btn-outline-primary" onclick="takeSnapshot()">
+                                    <i class="fas fa-camera"></i> Snapshot
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="alert alert-info" id="camera-status">
+                                    <i class="fas fa-info-circle"></i> Camera Status: <span id="status-text">Ready</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Live Camera Feed -->
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="text-center">
+                                    <h5>Live Feed: Original (Left) | Depth Map (Right)</h5>
+                                    <div id="camera-container" style="display: none;">
+                                        <img id="camera-feed" src="" alt="Camera Feed" class="result-image" style="max-width: 100%; height: auto;">
+                                    </div>
+                                    <div id="camera-placeholder" class="upload-area">
+                                        <i class="fas fa-video fa-3x mb-3 text-primary"></i>
+                                        <h5>Click "Start Camera" to begin live depth mapping</h5>
+                                        <p class="text-muted">Real-time depth estimation from your webcam</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Snapshot Results -->
+                        <div id="snapshot-results" class="mt-4"></div>
+                        
+                        <div class="loading" id="camera-loading">
+                            <div class="spinner"></div>
+                            <p>Starting camera...</p>
+                        </div>
                     </div>
                 </div>
 
@@ -540,6 +597,166 @@
                 uploadFile();
             }
         }
+
+        // Camera functionality
+        let cameraInterval = null;
+        
+        function startCamera() {
+            const loading = document.getElementById('camera-loading');
+            const statusText = document.getElementById('status-text');
+            const cameraContainer = document.getElementById('camera-container');
+            const cameraPlaceholder = document.getElementById('camera-placeholder');
+            const cameraFeed = document.getElementById('camera-feed');
+            
+            loading.style.display = 'block';
+            statusText.textContent = 'Starting...';
+            
+            fetch('/api/camera/start', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    statusText.textContent = 'Running';
+                    cameraPlaceholder.style.display = 'none';
+                    cameraContainer.style.display = 'block';
+                    
+                    // Start the camera feed
+                    cameraFeed.src = '/camera_feed?' + new Date().getTime();
+                    
+                    // Update status periodically
+                    cameraInterval = setInterval(updateCameraStatus, 2000);
+                    
+                    // Show success message
+                    document.getElementById('snapshot-results').innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i> Camera started successfully! Live depth mapping is now active.
+                        </div>
+                    `;
+                } else {
+                    statusText.textContent = 'Error';
+                    document.getElementById('snapshot-results').innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Error: ${data.error}
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                statusText.textContent = 'Error';
+                document.getElementById('snapshot-results').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Network error: ${error.message}
+                    </div>
+                `;
+            });
+        }
+        
+        function stopCamera() {
+            const statusText = document.getElementById('status-text');
+            const cameraContainer = document.getElementById('camera-container');
+            const cameraPlaceholder = document.getElementById('camera-placeholder');
+            
+            if (cameraInterval) {
+                clearInterval(cameraInterval);
+                cameraInterval = null;
+            }
+            
+            fetch('/api/camera/stop', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                statusText.textContent = 'Stopped';
+                cameraContainer.style.display = 'none';
+                cameraPlaceholder.style.display = 'block';
+                
+                document.getElementById('snapshot-results').innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> Camera stopped successfully.
+                    </div>
+                `;
+            })
+            .catch(error => {
+                statusText.textContent = 'Error';
+                document.getElementById('snapshot-results').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Error stopping camera: ${error.message}
+                    </div>
+                `;
+            });
+        }
+        
+        function takeSnapshot() {
+            const results = document.getElementById('snapshot-results');
+            
+            fetch('/api/camera/snapshot', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    results.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>Captured Image</h5>
+                                <img src="${data.original_image}" class="result-image" alt="Captured Image">
+                            </div>
+                            <div class="col-md-6">
+                                <h5>Generated Depth Map</h5>
+                                <img src="${data.depth_map}" class="result-image" alt="Depth Map">
+                            </div>
+                        </div>
+                        <div class="alert alert-success mt-3">
+                            <i class="fas fa-camera"></i> ${data.message}
+                        </div>
+                    `;
+                } else {
+                    results.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Error: ${data.error}
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                results.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Snapshot error: ${error.message}
+                    </div>
+                `;
+            });
+        }
+        
+        function updateCameraStatus() {
+            fetch('/api/camera/status')
+            .then(response => response.json())
+            .then(data => {
+                const statusText = document.getElementById('status-text');
+                if (data.is_streaming) {
+                    statusText.textContent = 'Running';
+                } else {
+                    statusText.textContent = 'Stopped';
+                    if (cameraInterval) {
+                        clearInterval(cameraInterval);
+                        cameraInterval = null;
+                    }
+                }
+            })
+            .catch(error => {
+                console.log('Status check error:', error);
+            });
+        }
+        
+        // Auto-stop camera when page is closed
+        window.addEventListener('beforeunload', function() {
+            if (cameraInterval) {
+                stopCamera();
+            }
+        });
     </script>
 </body>
 </html> 

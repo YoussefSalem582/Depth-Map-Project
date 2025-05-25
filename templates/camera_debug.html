@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Debug - Depth Map Project</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        #log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Camera Debug Tool</h1>
+        <p>Use this page to test camera functionality step by step.</p>
+        
+        <div>
+            <button class="button" onclick="checkStatus()">Check Status</button>
+            <button class="button" onclick="startCamera()">Start Camera</button>
+            <button class="button" onclick="stopCamera()">Stop Camera</button>
+            <button class="button" onclick="takeSnapshot()">Take Snapshot</button>
+            <button class="button" onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div id="status" class="status info">Ready to test camera functionality</div>
+        
+        <h3>Debug Log:</h3>
+        <div id="log"></div>
+        
+        <h3>Camera Feed Test:</h3>
+        <div>
+            <img id="camera-feed" src="" alt="Camera feed will appear here" style="max-width: 100%; border: 1px solid #ccc;">
+        </div>
+    </div>
+
+    <script>
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function setStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        async function checkStatus() {
+            log('Checking camera status...');
+            try {
+                const response = await fetch('/api/camera/status');
+                const data = await response.json();
+                log(`Status response: ${JSON.stringify(data)}`);
+                setStatus(`Camera status: ${data.is_streaming ? 'Streaming' : 'Stopped'}`, 'info');
+            } catch (error) {
+                log(`Status error: ${error.message}`);
+                setStatus('Failed to check status', 'error');
+            }
+        }
+        
+        async function startCamera() {
+            log('Starting camera...');
+            setStatus('Starting camera...', 'info');
+            try {
+                const response = await fetch('/api/camera/start', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                log(`Start response: ${JSON.stringify(data)}`);
+                
+                if (data.success) {
+                    setStatus('Camera started successfully!', 'success');
+                    // Start showing camera feed
+                    document.getElementById('camera-feed').src = '/camera_feed?' + new Date().getTime();
+                } else {
+                    setStatus(`Failed to start camera: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`Start error: ${error.message}`);
+                setStatus('Failed to start camera', 'error');
+            }
+        }
+        
+        async function stopCamera() {
+            log('Stopping camera...');
+            try {
+                const response = await fetch('/api/camera/stop', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                log(`Stop response: ${JSON.stringify(data)}`);
+                setStatus('Camera stopped', 'info');
+                document.getElementById('camera-feed').src = '';
+            } catch (error) {
+                log(`Stop error: ${error.message}`);
+                setStatus('Failed to stop camera', 'error');
+            }
+        }
+        
+        async function takeSnapshot() {
+            log('Taking snapshot...');
+            try {
+                const response = await fetch('/api/camera/snapshot', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                log(`Snapshot response: success=${data.success}`);
+                
+                if (data.success) {
+                    setStatus('Snapshot captured successfully!', 'success');
+                    log(`Original image size: ${data.original_image ? data.original_image.length : 0} chars`);
+                    log(`Depth map size: ${data.depth_map ? data.depth_map.length : 0} chars`);
+                } else {
+                    setStatus(`Snapshot failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`Snapshot error: ${error.message}`);
+                setStatus('Failed to take snapshot', 'error');
+            }
+        }
+        
+        // Auto-check status on page load
+        window.onload = function() {
+            log('Camera debug page loaded');
+            checkStatus();
+        };
+    </script>
+</body>
+</html> 

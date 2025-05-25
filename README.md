@@ -46,6 +46,7 @@ A modern web-based depth estimation and visualization platform built with Flask 
 ## 🌐 Web Interface Features
 
 - **📱 Interactive Demo**: Generate and process synthetic depth maps
+- **📷 Live Camera**: Real-time depth mapping from webcam feed
 - **📤 Upload & Process**: Drag & drop image processing
 - **📊 Metrics Analysis**: Comprehensive evaluation metrics
 - **🎨 Colormap Gallery**: Visual depth map comparisons
@@ -83,6 +84,11 @@ DepthMap/
 
 - `GET /` - Main web interface
 - `POST /api/demo` - Generate demo depth maps
+- `POST /api/camera/start` - Start live camera feed
+- `POST /api/camera/stop` - Stop camera feed
+- `POST /api/camera/snapshot` - Capture camera snapshot
+- `GET /api/camera/status` - Get camera status
+- `GET /camera_feed` - Live camera stream
 - `POST /api/upload` - Upload and process images
 - `POST /api/evaluate` - Calculate evaluation metrics
 - `GET /api/colormaps` - Get colormap examples
